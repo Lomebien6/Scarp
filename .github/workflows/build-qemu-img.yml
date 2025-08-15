@@ -1,0 +1,60 @@
+name: Build qemu-img (macOS)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-qemu-img:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout (no source needed)
+        uses: actions/checkout@v4
+
+      - name: Ensure Homebrew on PATH
+        run: |
+          if ! command -v brew >/dev/null 2>&1; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> $GITHUB_ENV
+          fi
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+
+      - name: Update Homebrew
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          brew update --quiet
+
+      - name: Install qemu via brew
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          brew install qemu || brew upgrade qemu || true
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          qemu-img --version
+
+      - name: Collect qemu-img and metadata
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          QIMG=$(which qemu-img || true)
+          echo "qemu-img path: ${QIMG}"
+          mkdir -p artifact
+          if [ -n "${QIMG}" ]; then
+            cp "${QIMG}" artifact/qemu-img || true
+            # capture linked libraries for debugging
+            otool -L "${QIMG}" > artifact/qemu-img.libraries.txt || true
+            # capture file type
+            file "${QIMG}" > artifact/qemu-img.file.txt || true
+          else
+            echo "qemu-img not found" > artifact/qemu-img.file.txt
+          fi
+          ls -lh artifact || true
+
+      - name: Make a tarball artifact
+        run: |
+          cd artifact
+          tar -czvf qemu-img-darwin-arm64.tar.gz qemu-img qemu-img.libraries.txt qemu-img.file.txt || true
+          ls -lh qemu-img-darwin-arm64.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-img-darwin-arm64
+          path: artifact/qemu-img-darwin-arm64.tar.gz
